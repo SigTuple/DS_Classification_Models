@@ -41,9 +41,10 @@ class RBCQIDataset(Dataset):
 
 
 class ToFeatureTensor:
-    """RGB tensor, optionally extended with a normalized fixed Sobel magnitude map."""
-    def __init__(self, feature_mode: str):
+    """Normalized RGB, optionally extended by one deterministic structural feature map."""
+    def __init__(self, feature_mode: str, feature_params: dict):
         self.feature_mode = feature_mode
+        self.feature_params = feature_params
 
     def __call__(self, image: Image.Image) -> torch.Tensor:
         rgb = np.asarray(image, dtype=np.uint8).copy()
@@ -51,12 +52,85 @@ class ToFeatureTensor:
         rgb_tensor = (rgb_tensor - torch.tensor(RGB_MEAN).view(3, 1, 1)) / torch.tensor(RGB_STD).view(3, 1, 1)
         if self.feature_mode == "rgb":
             return rgb_tensor
-        gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
+        feature = extract_feature_map(rgb, self.feature_mode, self.feature_params)
+        return torch.cat((rgb_tensor, torch.from_numpy(feature).float().unsqueeze(0)), dim=0)
+
+
+def extract_feature_map(rgb: np.ndarray, feature_mode: str, feature_params: dict) -> np.ndarray:
+    """Return one HxW float32 map in [0, 1] from unnormalized, resized RGB."""
+    gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
+    if feature_mode == "rgb_sobel":
         grad_x = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
         grad_y = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
-        magnitude = np.hypot(grad_x, grad_y) / (4.0 * 255.0 * np.sqrt(2.0))
-        sobel = torch.from_numpy(np.clip(magnitude, 0.0, 1.0)).float().unsqueeze(0)
-        return torch.cat((rgb_tensor, sobel), dim=0)
+        feature = np.hypot(grad_x, grad_y) / (4.0 * 255.0 * np.sqrt(2.0))
+    elif feature_mode == "rgb_canny":
+        params = feature_params["canny"]
+        feature = cv2.Canny(
+            gray,
+            threshold1=params["threshold1"],
+            threshold2=params["threshold2"],
+            apertureSize=params["aperture_size"],
+        ).astype(np.float32) / 255.0
+    elif feature_mode == "rgb_local_entropy":
+        feature = local_entropy(gray, feature_params["local_entropy"])
+    elif feature_mode == "rgb_local_contrast":
+        feature = local_contrast(gray, feature_params["local_contrast"])
+    elif feature_mode == "rgb_lbp":
+        feature = local_binary_pattern(gray, feature_params["lbp"])
+    else:
+        raise ValueError(f"Unsupported feature mode: {feature_mode}")
+    return np.clip(feature, 0.0, 1.0).astype(np.float32)
+
+
+def local_entropy(gray: np.ndarray, params: dict) -> np.ndarray:
+    """Shannon entropy over a configurable square local window using quantized intensities."""
+    bins = params["bins"]
+    window = params["window_size"]
+    if bins < 2 or window < 1 or window % 2 == 0:
+        raise ValueError("local_entropy requires bins >= 2 and an odd positive window_size.")
+    quantized = np.minimum((gray.astype(np.int32) * bins) // 256, bins - 1)
+    entropy = np.zeros(gray.shape, dtype=np.float32)
+    for bin_index in range(bins):
+        probability = cv2.boxFilter(
+            (quantized == bin_index).astype(np.float32),
+            ddepth=cv2.CV_32F,
+            ksize=(window, window),
+            normalize=True,
+            borderType=cv2.BORDER_REFLECT,
+        )
+        term = np.zeros_like(probability)
+        valid = probability > 0
+        term[valid] = probability[valid] * np.log2(probability[valid])
+        entropy -= term
+    return entropy / np.log2(bins)
+
+
+def local_contrast(gray: np.ndarray, params: dict) -> np.ndarray:
+    """Local RMS contrast (local standard deviation), scaled to [0, 1]."""
+    window = params["window_size"]
+    scale = params["normalization_scale"]
+    if window < 1 or window % 2 == 0 or scale <= 0:
+        raise ValueError("local_contrast requires odd positive window_size and positive normalization_scale.")
+    image = gray.astype(np.float32)
+    mean = cv2.boxFilter(image, cv2.CV_32F, (window, window), normalize=True, borderType=cv2.BORDER_REFLECT)
+    mean_square = cv2.boxFilter(image * image, cv2.CV_32F, (window, window), normalize=True, borderType=cv2.BORDER_REFLECT)
+    return np.sqrt(np.maximum(mean_square - mean * mean, 0.0)) / scale
+
+
+def local_binary_pattern(gray: np.ndarray, params: dict) -> np.ndarray:
+    """Classic 8-neighbour, radius-1 LBP map normalized from [0, 255] to [0, 1]."""
+    if params["points"] != 8 or params["radius"] != 1:
+        raise ValueError("This implementation supports LBP with points=8 and radius=1 only.")
+    padded = cv2.copyMakeBorder(gray, 1, 1, 1, 1, cv2.BORDER_REFLECT)
+    center = padded[1:-1, 1:-1]
+    lbp = np.zeros_like(gray, dtype=np.uint8)
+    neighbours = (
+        padded[:-2, :-2], padded[:-2, 1:-1], padded[:-2, 2:], padded[1:-1, 2:],
+        padded[2:, 2:], padded[2:, 1:-1], padded[2:, :-2], padded[1:-1, :-2],
+    )
+    for bit, neighbour in enumerate(neighbours):
+        lbp |= ((neighbour >= center).astype(np.uint8) << bit)
+    return lbp.astype(np.float32) / 255.0
 
 
 def build_transform(config: dict, training: bool):
@@ -84,7 +158,7 @@ def build_transform(config: dict, training: bool):
                 )],
                 p=augmentations["shift_scale_rotate_p"],
             ))
-    steps.append(ToFeatureTensor(config["model"]["input_features"]))
+    steps.append(ToFeatureTensor(config["model"]["input_features"], config["data"]["feature_params"]))
     return transforms.Compose(steps)
 
 

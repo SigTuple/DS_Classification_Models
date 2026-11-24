@@ -11,6 +11,7 @@ def create_model(config: dict) -> nn.Module:
     weights = EfficientNet_B0_Weights.DEFAULT if model_cfg.get("pretrained", False) else None
     model = efficientnet_b0(weights=weights)
     channels = input_channels(config)
+    # All non-RGB modes use RGB plus one deterministic fourth feature channel.
     if channels != 3:
         original = model.features[0][0]
         replacement = nn.Conv2d(

@@ -1,0 +1,15 @@
+experiment:
+  id: e4_downscaled_batch2
+  description: RGB-only baseline on the 2x-downscaled RBC-QI dataset.
+
+data:
+  # Populate this dataset directory before training E4/E5.
+  dataset_dir: data/RBC_QI_DATASET_DOWNSCALED_2X
+  image_height: 544
+  image_width: 720
+
+model:
+  input_features: rgb
+
+training:
+  batch_size: 2

@@ -1,0 +1,9 @@
+experiment:
+  id: e6_local_entropy
+  description: Full-FOV RGB plus normalized local-entropy map as the fourth channel.
+
+model:
+  input_features: rgb_local_entropy
+
+training:
+  batch_size: 2

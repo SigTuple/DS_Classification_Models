@@ -3,7 +3,7 @@ project:
   runs_dir: runs
 
 data:
-  dataset_dir: /media/sigtupleds/Data/Classification_Model_Training/RBC_QI_Training/data/QI_RBC_DATA_iter_2_training
+  dataset_dir: data/RBC_QI_DATASET
   train_subdir: train
   test_subdir: test
   image_height: 1088
@@ -23,7 +23,6 @@ data:
     - shifted
     - slightly_shifted
     - severely_out_of_focus
-    - scratches
   # RBC-QI-safe augmentation policy retained from the previous training
   # configuration. Both E0 and E2 inherit this exact policy by default.
   # The active geometric transforms are implemented in rbc_qi/data.py.
@@ -68,6 +67,23 @@ data:
     # Existing preprocessing model policy
     apply_sharpen_denoise_model: false
     num_random_transforms: 1
+
+  # Parameters for optional fourth-channel structural feature maps. The
+  # selected model.input_features mode determines which map is used.
+  feature_params:
+    canny:
+      threshold1: 50
+      threshold2: 150
+      aperture_size: 3
+    local_entropy:
+      bins: 16
+      window_size: 9
+    local_contrast:
+      window_size: 9
+      normalization_scale: 64.0
+    lbp:
+      points: 8
+      radius: 1
 
 model:
   name: efficientnet_b0

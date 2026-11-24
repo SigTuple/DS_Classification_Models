@@ -34,8 +34,19 @@ def load_config(experiment_config: str | Path) -> dict[str, Any]:
 
 def validate_config(config: dict[str, Any]) -> None:
     feature_mode = config["model"].get("input_features")
-    if feature_mode not in {"rgb", "rgb_sobel"}:
-        raise ValueError("model.input_features must be 'rgb' or 'rgb_sobel'.")
+    supported_features = {
+        "rgb",
+        "rgb_sobel",
+        "rgb_canny",
+        "rgb_local_entropy",
+        "rgb_local_contrast",
+        "rgb_lbp",
+    }
+    if feature_mode not in supported_features:
+        raise ValueError(
+            "model.input_features must be one of: "
+            + ", ".join(sorted(supported_features))
+        )
     if config["model"]["name"] != "efficientnet_b0":
         raise ValueError("This initial repository supports model.name=efficientnet_b0.")
     if not config["experiment"].get("id"):
@@ -45,7 +56,7 @@ def validate_config(config: dict[str, Any]) -> None:
 
 
 def input_channels(config: dict[str, Any]) -> int:
-    return 4 if config["model"]["input_features"] == "rgb_sobel" else 3
+    return 3 if config["model"]["input_features"] == "rgb" else 4
 
 
 def project_path(value: str | Path) -> Path:

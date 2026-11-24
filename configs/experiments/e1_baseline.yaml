@@ -1,0 +1,6 @@
+experiment:
+  id: e1_baseline
+  description: RGB-only EfficientNet-B0 baseline at full FOV.
+
+model:
+  input_features: rgb

@@ -1,0 +1,15 @@
+experiment:
+  id: e5_downscaled_batch4
+  description: E4 downscaled RGB dataset with batch size increased to four.
+
+data:
+  # Populate this dataset directory before training E4/E5.
+  dataset_dir: data/RBC_QI_DATASET_DOWNSCALED_2X
+  image_height: 544
+  image_width: 720
+
+model:
+  input_features: rgb
+
+training:
+  batch_size: 4
