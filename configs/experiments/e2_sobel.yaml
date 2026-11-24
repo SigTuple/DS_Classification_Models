@@ -1,0 +1,6 @@
+experiment:
+  id: e2_sobel
+  description: EfficientNet-B0 with RGB plus Sobel gradient magnitude.
+
+model:
+  input_features: rgb_sobel

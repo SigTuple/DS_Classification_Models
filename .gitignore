@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.venv/
+data/*
+!data/.gitkeep
+!data/README.md
+runs/*
+!runs/.gitkeep
+runs/training_status.log
+*.pth
+*.onnx
+*.onnx.data
