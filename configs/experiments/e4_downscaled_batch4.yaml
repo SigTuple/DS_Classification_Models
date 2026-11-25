@@ -14,4 +14,4 @@ model:
 training:
   batch_size: 4
   # This run is intentionally CPU-only because the host GPU is reserved.
-  device: cpu
+  #device: cpu
