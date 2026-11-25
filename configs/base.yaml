@@ -22,6 +22,7 @@ data:
     - shifted
     - slightly_shifted
     - severely_out_of_focus
+    - scratches
   # RBC-QI-safe augmentation policy retained from the previous training
   # configuration. All experiments inherit this exact policy by default.
   # The active geometric transforms are implemented in rbc_qi/data.py.
