@@ -12,13 +12,12 @@ sys.path.insert(0, str(ROOT))
 
 DEFAULT_CONFIGS = [
     str(ROOT / "configs" / "experiments" / "e0_baseline.yaml"),
-    str(ROOT / "configs" / "experiments" / "e1_sobel.yaml"),
-    str(ROOT / "configs" / "experiments" / "e2_canny_edge_map.yaml"),
     str(ROOT / "configs" / "experiments" / "e3_downscaled_batch2.yaml"),
-    str(ROOT / "configs" / "experiments" / "e4_downscaled_batch4.yaml"),
-    str(ROOT / "configs" / "experiments" / "e5_local_entropy.yaml"),
-    str(ROOT / "configs" / "experiments" / "e6_local_contrast.yaml"),
     str(ROOT / "configs" / "experiments" / "e7_lbp.yaml"),
+    str(ROOT / "configs" / "experiments" / "e6_local_contrast.yaml"),
+    str(ROOT / "configs" / "experiments" / "e5_local_entropy.yaml"),
+    str(ROOT / "configs" / "experiments" / "e4_downscaled_batch4.yaml"),
+    str(ROOT / "configs" / "experiments" / "e2_canny_edge_map.yaml"),
     str(ROOT / "configs" / "experiments" / "e8_full_fov_batch4.yaml"),
 ]
 
@@ -33,7 +32,7 @@ def main() -> int:
         "--configs",
         nargs="+",
         default=DEFAULT_CONFIGS,
-        help="Experiment YAML files, in run order. Defaults to E0 through E8.",
+        help="Experiment YAML files, in run order. Defaults to E0, E3, E7, E6, E5, E4, E2, E8.",
     )
     arguments = parser.parse_args()
     for config_path in arguments.configs:
