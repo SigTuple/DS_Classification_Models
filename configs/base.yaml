@@ -18,13 +18,12 @@ data:
     - edges
     - focused
     - light_dust
-    - slightly_out_of_focus
     - partially_focused
     - shifted
     - slightly_shifted
     - severely_out_of_focus
   # RBC-QI-safe augmentation policy retained from the previous training
-  # configuration. Both E0 and E2 inherit this exact policy by default.
+  # configuration. All experiments inherit this exact policy by default.
   # The active geometric transforms are implemented in rbc_qi/data.py.
   augmentations:
     # Intensity / color: disabled for QI training
