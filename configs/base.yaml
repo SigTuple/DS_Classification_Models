@@ -3,7 +3,7 @@ project:
   runs_dir: runs
 
 data:
-  dataset_dir: data/RBC_QI_DATASET
+  dataset_dir: /home/sigtuple/Documents/Classification/RBC_QI_Training/data/QI_RBC_DATA_iter_2_2_training
   train_subdir: train
   test_subdir: test
   image_height: 1088
@@ -22,6 +22,7 @@ data:
     - shifted
     - slightly_shifted
     - severely_out_of_focus
+    - scratches
   # RBC-QI-safe augmentation policy retained from the previous training
   # configuration. All experiments inherit this exact policy by default.
   # The active geometric transforms are implemented in rbc_qi/data.py.

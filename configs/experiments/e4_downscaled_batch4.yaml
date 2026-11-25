@@ -4,7 +4,7 @@ experiment:
 
 data:
   # Populate this dataset directory before training E3/E4.
-  dataset_dir: data/RBC_QI_DATASET_DOWNSCALED_2X
+  dataset_dir: /home/sigtuple/Documents/Classification/RBC_QI_Training/data/QI_RBC_DATA_iter_2_2_downsampled_training
   image_height: 544
   image_width: 720
 
