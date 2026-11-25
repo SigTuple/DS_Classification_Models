@@ -13,7 +13,14 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from .config import input_channels, load_config, project_path
-from .data import RBCQIDataset, build_transform
+from .data import (
+    RBCQIDataset,
+    build_cached_transform,
+    build_transform,
+    cleanup_feature_cache,
+    feature_cache_enabled,
+    prepare_feature_cache,
+)
 from .model_factory import create_model
 from .tracking import ExperimentLogger, write_json
 
@@ -100,8 +107,27 @@ def train(config_path: str | Path, run_dir_override: str | Path | None = None, s
     _banner("RBC-QI DATASET")
     print(f"Train directory:\n{dataset_root / data_cfg['train_subdir']}")
     print(f"\nTest directory:\n{dataset_root / data_cfg['test_subdir']}")
-    train_set = RBCQIDataset(dataset_root / data_cfg["train_subdir"], classes, build_transform(config, training=True))
-    test_set = RBCQIDataset(dataset_root / data_cfg["test_subdir"], classes, build_transform(config, training=False))
+    cache_dirs = None
+    if feature_cache_enabled(config):
+        if status_tracker is not None:
+            status_tracker.update("PREPARING_CACHE", experiment_id=experiment_id)
+        _banner("PREPARING FEATURE CACHE")
+        cache_dirs = prepare_feature_cache(config, dataset_root, classes)
+        if status_tracker is not None:
+            status_tracker.update("TRAINING", experiment_id=experiment_id)
+        train_transform = build_cached_transform(config, training=True)
+        test_transform = build_cached_transform(config, training=False)
+    else:
+        train_transform = build_transform(config, training=True)
+        test_transform = build_transform(config, training=False)
+    train_set = RBCQIDataset(
+        dataset_root / data_cfg["train_subdir"], classes, train_transform,
+        feature_cache_dir=cache_dirs["train"] if cache_dirs else None,
+    )
+    test_set = RBCQIDataset(
+        dataset_root / data_cfg["test_subdir"], classes, test_transform,
+        feature_cache_dir=cache_dirs["test"] if cache_dirs else None,
+    )
     print(f"Loaded {len(train_set):,} RBC-QI images from {dataset_root / data_cfg['train_subdir']}")
     print(f"Loaded {len(test_set):,} RBC-QI images from {dataset_root / data_cfg['test_subdir']}")
     workers = min(data_cfg["num_workers"], 8)
@@ -146,6 +172,7 @@ def train(config_path: str | Path, run_dir_override: str | Path | None = None, s
     scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
     logger = ExperimentLogger(config, run_dir, run_dir.name)
     best_accuracy = -1.0
+    completed = False
     try:
         for epoch in range(1, config["training"]["epochs"] + 1):
             model.train()
@@ -183,8 +210,11 @@ def train(config_path: str | Path, run_dir_override: str | Path | None = None, s
             scheduler.step()
             print(f"{run_dir.name}: epoch {epoch}/{config['training']['epochs']} | val_accuracy={validation['accuracy']:.4f} | val_macro_f1={validation['macro_f1']:.4f}", flush=True)
         write_json(run_dir / "summary.json", {"best_val_accuracy": best_accuracy, "epochs": config["training"]["epochs"], "status": "DONE"})
+        completed = True
     finally:
         logger.close()
+        if completed and cache_dirs:
+            cleanup_feature_cache(config, cache_dirs)
     return run_dir
 
 

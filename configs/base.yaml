@@ -83,6 +83,12 @@ data:
     lbp:
       points: 8
       radius: 1
+  # Full-resolution fourth-channel maps are generated once before a feature
+  # experiment, reused for all epochs, and deleted only after success.
+  feature_cache:
+    enabled: true
+    root_dir: data/.feature_cache
+    cleanup_after_success: true
 
 model:
   name: efficientnet_b0

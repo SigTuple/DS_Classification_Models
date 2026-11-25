@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import hashlib
+import json
+import shutil
 from pathlib import Path
 
 import cv2
@@ -13,13 +16,15 @@ from torchvision import transforms
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"}
 RGB_MEAN = (0.485, 0.456, 0.406)
 RGB_STD = (0.229, 0.224, 0.225)
+PIL_BILINEAR = getattr(getattr(Image, "Resampling", Image), "BILINEAR")
 
 
 class RBCQIDataset(Dataset):
-    def __init__(self, root_dir: str | Path, class_names: list[str], transform=None):
+    def __init__(self, root_dir: str | Path, class_names: list[str], transform=None, feature_cache_dir: str | Path | None = None):
         self.root_dir = Path(root_dir)
         self.class_names = class_names
         self.transform = transform
+        self.feature_cache_dir = Path(feature_cache_dir) if feature_cache_dir else None
         self.samples: list[tuple[Path, int]] = []
         for label, class_name in enumerate(class_names):
             class_dir = self.root_dir / class_name
@@ -37,6 +42,12 @@ class RBCQIDataset(Dataset):
     def __getitem__(self, index: int):
         path, label = self.samples[index]
         image = Image.open(path).convert("RGB")
+        if self.feature_cache_dir is not None:
+            cache_path = self.feature_cache_dir / _cache_relative_path(path.relative_to(self.root_dir))
+            if not cache_path.is_file():
+                raise FileNotFoundError(f"Missing prepared feature cache: {cache_path}")
+            feature = Image.open(cache_path).convert("L")
+            return self.transform(image, feature), label
         return self.transform(image), label
 
 
@@ -48,12 +59,40 @@ class ToFeatureTensor:
 
     def __call__(self, image: Image.Image) -> torch.Tensor:
         rgb = np.asarray(image, dtype=np.uint8).copy()
-        rgb_tensor = torch.from_numpy(np.ascontiguousarray(rgb.transpose(2, 0, 1))).float().div_(255.0)
-        rgb_tensor = (rgb_tensor - torch.tensor(RGB_MEAN).view(3, 1, 1)) / torch.tensor(RGB_STD).view(3, 1, 1)
+        rgb_tensor = rgb_to_tensor(rgb)
         if self.feature_mode == "rgb":
             return rgb_tensor
         feature = extract_feature_map(rgb, self.feature_mode, self.feature_params)
         return torch.cat((rgb_tensor, torch.from_numpy(feature).float().unsqueeze(0)), dim=0)
+
+
+def rgb_to_tensor(rgb: np.ndarray) -> torch.Tensor:
+    tensor = torch.from_numpy(np.ascontiguousarray(rgb.transpose(2, 0, 1))).float().div_(255.0)
+    return (tensor - torch.tensor(RGB_MEAN).view(3, 1, 1)) / torch.tensor(RGB_STD).view(3, 1, 1)
+
+
+class CachedFeatureTransform:
+    """Apply identical spatial augmentation to RGB and its precomputed feature map."""
+
+    def __init__(self, config: dict, training: bool):
+        data = config["data"]
+        self.resize = transforms.Resize((data["image_height"], data["image_width"]))
+        self.spatial = transforms.Compose(_spatial_steps(data["augmentations"], training))
+
+    def __call__(self, image: Image.Image, feature: Image.Image) -> torch.Tensor:
+        image = self.resize(image)
+        if self.spatial.transforms:
+            # torchvision's random spatial transforms use torch's RNG. Replaying
+            # the seed keeps RGB pixels and the fourth-channel map aligned.
+            seed = torch.randint(0, 2**31 - 1, ()).item()
+            with torch.random.fork_rng(devices=[]):
+                torch.manual_seed(seed)
+                image = self.spatial(image)
+                torch.manual_seed(seed)
+                feature = self.spatial(feature)
+        rgb = np.asarray(image, dtype=np.uint8).copy()
+        feature_map = np.asarray(feature, dtype=np.uint8).astype(np.float32) / 255.0
+        return torch.cat((rgb_to_tensor(rgb), torch.from_numpy(feature_map).unsqueeze(0)), dim=0)
 
 
 def extract_feature_map(rgb: np.ndarray, feature_mode: str, feature_params: dict) -> np.ndarray:
@@ -133,11 +172,9 @@ def local_binary_pattern(gray: np.ndarray, params: dict) -> np.ndarray:
     return lbp.astype(np.float32) / 255.0
 
 
-def build_transform(config: dict, training: bool):
-    data = config["data"]
-    steps = [transforms.Resize((data["image_height"], data["image_width"]))]
-    augmentations = data["augmentations"]
+def _spatial_steps(augmentations: dict, training: bool) -> list:
     _reject_unsupported_active_augmentations(augmentations)
+    steps = []
     if training:
         if augmentations["hflip_p"]:
             steps.append(transforms.RandomHorizontalFlip(p=augmentations["hflip_p"]))
@@ -158,8 +195,80 @@ def build_transform(config: dict, training: bool):
                 )],
                 p=augmentations["shift_scale_rotate_p"],
             ))
+    return steps
+
+
+def build_transform(config: dict, training: bool):
+    data = config["data"]
+    steps = [transforms.Resize((data["image_height"], data["image_width"]))]
+    steps.extend(_spatial_steps(data["augmentations"], training))
     steps.append(ToFeatureTensor(config["model"]["input_features"], config["data"]["feature_params"]))
     return transforms.Compose(steps)
+
+
+def build_cached_transform(config: dict, training: bool) -> CachedFeatureTransform:
+    return CachedFeatureTransform(config, training)
+
+
+def feature_cache_enabled(config: dict) -> bool:
+    return bool(
+        config["data"].get("feature_cache", {}).get("enabled", False)
+        and config["model"]["input_features"] != "rgb"
+    )
+
+
+def prepare_feature_cache(config: dict, dataset_root: Path, class_names: list[str]) -> dict[str, Path]:
+    """Create cached uint8 feature maps once, keyed by feature parameters and FOV."""
+    data = config["data"]
+    feature_mode = config["model"]["input_features"]
+    cache_settings = data["feature_cache"]
+    fingerprint_source = json.dumps(
+        {"mode": feature_mode, "params": data["feature_params"], "height": data["image_height"], "width": data["image_width"]},
+        sort_keys=True,
+    ).encode()
+    fingerprint = hashlib.sha256(fingerprint_source).hexdigest()[:12]
+    root = Path(cache_settings["root_dir"])
+    if not root.is_absolute():
+        root = Path(__file__).resolve().parents[1] / root
+    cache_root = root / f"{feature_mode}_{data['image_height']}x{data['image_width']}_{fingerprint}"
+    results: dict[str, Path] = {}
+    for split_key, split_name in (("train", data["train_subdir"]), ("test", data["test_subdir"])):
+        source_root = dataset_root / split_name
+        target_root = cache_root / split_name
+        dataset = RBCQIDataset(source_root, class_names, transform=None)
+        missing = [path for path, _ in dataset.samples if _cache_needs_update(path, target_root / _cache_relative_path(path.relative_to(source_root)))]
+        print(f"Feature cache {feature_mode} ({split_key}): {len(dataset.samples) - len(missing):,}/{len(dataset.samples):,} ready")
+        for source_path in missing:
+            target_path = target_root / _cache_relative_path(source_path.relative_to(source_root))
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            image = Image.open(source_path).convert("RGB")
+            image = image.resize((data["image_width"], data["image_height"]), PIL_BILINEAR)
+            feature = extract_feature_map(np.asarray(image, dtype=np.uint8).copy(), feature_mode, data["feature_params"])
+            temporary = target_path.with_name(target_path.name + ".tmp.png")
+            Image.fromarray(np.rint(feature * 255.0).astype(np.uint8), mode="L").save(temporary, format="PNG")
+            temporary.replace(target_path)
+        results[split_key] = target_root
+    return results
+
+
+def cleanup_feature_cache(config: dict, cache_dirs: dict[str, Path]) -> None:
+    """Delete only the completed experiment's shared cache namespace."""
+    if not config["data"]["feature_cache"].get("cleanup_after_success", True):
+        return
+    roots = {path.parent for path in cache_dirs.values()}
+    for root in roots:
+        if not root.name.startswith("rgb_"):
+            raise RuntimeError(f"Refusing unsafe feature-cache cleanup target: {root}")
+        shutil.rmtree(root)
+        print(f"Removed completed feature cache: {root}")
+
+
+def _cache_relative_path(relative_source_path: Path) -> Path:
+    return relative_source_path.parent / f"{relative_source_path.name}.png"
+
+
+def _cache_needs_update(source_path: Path, cache_path: Path) -> bool:
+    return not cache_path.is_file() or cache_path.stat().st_mtime_ns < source_path.stat().st_mtime_ns
 
 
 def _reject_unsupported_active_augmentations(augmentations: dict) -> None:

@@ -16,6 +16,7 @@ Every experiment uses the same trainer. Add an experiment by adding a YAML file 
 ```
 data/RBC_QI_DATASET/{train,test}/{class_name}/...  # full-FOV dataset (not committed)
 data/RBC_QI_DATASET_DOWNSCALED_2X/{train,test}/{class_name}/...  # E3/E4 dataset (not committed)
+data/.feature_cache/                              # temporary fourth-channel maps (not committed)
 configs/base.yaml                                  # shared settings
 configs/experiments/*.yaml                         # only experiment differences
 runs/<run_id>/                                    # checkpoints, metrics, config, ONNX
@@ -43,13 +44,17 @@ python3 -m pip install -r requirements.txt
 python3 /media/sigtupleds/Data/Classification_Model_Training/RBC_QI_Training/scripts/run_experiments.py
 ```
 
-The runner performs E0 through E8 in order. It stops on a failed experiment to preserve a fair, inspectable comparison. To run one experiment:
+The default runner performs E0, E3, E7, E6, E5, E4, E2, then E8. It stops on a failed experiment to preserve a fair, inspectable comparison. To run one experiment:
 
 ```bash
 python3 /media/sigtupleds/Data/Classification_Model_Training/RBC_QI_Training/scripts/run_experiments.py --configs /media/sigtupleds/Data/Classification_Model_Training/RBC_QI_Training/configs/experiments/e0_baseline.yaml
 ```
 
 All experiment YAMLs are included in the default E0–E8 queue and can also be run individually with `--configs`.
+
+## Feature-map cache
+
+For Canny, entropy, contrast, LBP, and Sobel experiments, the fourth-channel map is prepared once before training and reused in every epoch. The status file reports `PREPARING_CACHE` while this happens. The cache is removed after a successful experiment; if a run stops or fails, its cache remains available for the next attempt.
 
 ## Overnight status
 
