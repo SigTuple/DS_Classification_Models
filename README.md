@@ -2,11 +2,12 @@
 
 Configuration-driven training for RBC quality-index experiments. The configured experiment set is:
 
-- `e1_baseline`: RGB EfficientNet-B0 (3 channels).
-- `e3_canny_edge_map`: RGB + Canny map (4 channels).
-- `e4_downscaled_batch2` and `e5_downscaled_batch4`: RGB on a 2x-downscaled dataset.
-- `e6_local_entropy`, `e7_local_contrast`, `e8_lbp`: RGB plus one structural fourth channel.
-- `e9_full_fov_batch4`: full-FOV RGB with batch size four.
+- `e0_baseline`: full-FOV RGB EfficientNet-B0 baseline (3 channels).
+- `e1_sobel`: full-FOV RGB + Sobel gradient-magnitude map (4 channels).
+- `e2_canny_edge_map`: full-FOV RGB + Canny edge map (4 channels).
+- `e3_downscaled_batch2` and `e4_downscaled_batch4`: RGB on a 2x-downscaled dataset.
+- `e5_local_entropy`, `e6_local_contrast`, `e7_lbp`: full-FOV RGB plus one structural fourth channel.
+- `e8_full_fov_batch4`: full-FOV RGB with batch size four and learning rate `1e-4`.
 
 Every experiment uses the same trainer. Add an experiment by adding a YAML file in `configs/experiments/`; do not copy Python training scripts.
 
@@ -14,7 +15,7 @@ Every experiment uses the same trainer. Add an experiment by adding a YAML file 
 
 ```
 data/RBC_QI_DATASET/{train,test}/{class_name}/...  # full-FOV dataset (not committed)
-data/RBC_QI_DATASET_DOWNSCALED_2X/{train,test}/{class_name}/...  # E4/E5 dataset (not committed)
+data/RBC_QI_DATASET_DOWNSCALED_2X/{train,test}/{class_name}/...  # E3/E4 dataset (not committed)
 configs/base.yaml                                  # shared settings
 configs/experiments/*.yaml                         # only experiment differences
 runs/<run_id>/                                    # checkpoints, metrics, config, ONNX
@@ -42,11 +43,13 @@ python3 -m pip install -r requirements.txt
 python3 /media/sigtupleds/Data/Classification_Model_Training/RBC_QI_Training/scripts/run_experiments.py
 ```
 
-The runner performs E1, then E3 through E9. It stops on a failed experiment to preserve a fair, inspectable comparison. To run one experiment:
+The runner performs E0 through E8 in order. It stops on a failed experiment to preserve a fair, inspectable comparison. To run one experiment:
 
 ```bash
-python3 /media/sigtupleds/Data/Classification_Model_Training/RBC_QI_Training/scripts/run_experiments.py --configs /media/sigtupleds/Data/Classification_Model_Training/RBC_QI_Training/configs/experiments/e1_baseline.yaml
+python3 /media/sigtupleds/Data/Classification_Model_Training/RBC_QI_Training/scripts/run_experiments.py --configs /media/sigtupleds/Data/Classification_Model_Training/RBC_QI_Training/configs/experiments/e0_baseline.yaml
 ```
+
+All experiment YAMLs are included in the default E0–E8 queue and can also be run individually with `--configs`.
 
 ## Overnight status
 

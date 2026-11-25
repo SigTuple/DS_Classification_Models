@@ -18,14 +18,16 @@ from rbc_qi.model_factory import create_model
 # `train.py` is not required. The converter only needs the trained checkpoint
 # and the YAML configuration that created that architecture.
 DEFAULT_CHECKPOINT_PATH = (
-    "/media/sigtupleds/Data/Classification_Model_Training/RBC_QI_Training/runs/20261123_000900_e2_sobel/checkpoint_best.pth"
+    "/media/sigtupleds/Data/Classification_Model_Training/"
+    "RBC_QI_Training/runs/REPLACE_WITH_CHECKPOINT_DIRECTORY/checkpoint_best.pth"
 )
 DEFAULT_CONFIG_PATH = (
-    "/media/sigtupleds/Data/Classification_Model_Training/RBC_QI_Training/configs/experiments/e2_sobel.yaml"
+    "/media/sigtupleds/Data/Classification_Model_Training/"
+    "RBC_QI_Training/configs/experiments/e1_sobel.yaml"
 )
 # Default output is written beside DEFAULT_CHECKPOINT_PATH. Change this value
 # if a different ONNX filename is required.
-DEFAULT_OUTPUT_NAME = "RBC_QI_ITER_2_sobel.onnx"
+DEFAULT_OUTPUT_NAME = "best.onnx"
 
 
 def main() -> None:

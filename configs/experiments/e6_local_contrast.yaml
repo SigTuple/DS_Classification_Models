@@ -1,5 +1,5 @@
 experiment:
-  id: e7_local_contrast
+  id: e6_local_contrast
   description: Full-FOV RGB plus local RMS-contrast map as the fourth channel.
 
 model:

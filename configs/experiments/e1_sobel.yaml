@@ -1,0 +1,6 @@
+experiment:
+  id: e1_sobel
+  description: Full-FOV RGB plus Sobel gradient-magnitude fourth channel.
+
+model:
+  input_features: rgb_sobel

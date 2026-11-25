@@ -11,14 +11,15 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 DEFAULT_CONFIGS = [
-    str(ROOT / "configs" / "experiments" / "e1_baseline.yaml"),
-    str(ROOT / "configs" / "experiments" / "e3_canny_edge_map.yaml"),
-    str(ROOT / "configs" / "experiments" / "e4_downscaled_batch2.yaml"),
-    str(ROOT / "configs" / "experiments" / "e5_downscaled_batch4.yaml"),
-    str(ROOT / "configs" / "experiments" / "e6_local_entropy.yaml"),
-    str(ROOT / "configs" / "experiments" / "e7_local_contrast.yaml"),
-    str(ROOT / "configs" / "experiments" / "e8_lbp.yaml"),
-    str(ROOT / "configs" / "experiments" / "e9_full_fov_batch4.yaml"),
+    str(ROOT / "configs" / "experiments" / "e0_baseline.yaml"),
+    str(ROOT / "configs" / "experiments" / "e1_sobel.yaml"),
+    str(ROOT / "configs" / "experiments" / "e2_canny_edge_map.yaml"),
+    str(ROOT / "configs" / "experiments" / "e3_downscaled_batch2.yaml"),
+    str(ROOT / "configs" / "experiments" / "e4_downscaled_batch4.yaml"),
+    str(ROOT / "configs" / "experiments" / "e5_local_entropy.yaml"),
+    str(ROOT / "configs" / "experiments" / "e6_local_contrast.yaml"),
+    str(ROOT / "configs" / "experiments" / "e7_lbp.yaml"),
+    str(ROOT / "configs" / "experiments" / "e8_full_fov_batch4.yaml"),
 ]
 
 from rbc_qi.config import load_config, project_path
@@ -32,7 +33,7 @@ def main() -> int:
         "--configs",
         nargs="+",
         default=DEFAULT_CONFIGS,
-        help="Experiment YAML files, in run order. Defaults to E0 then E2.",
+        help="Experiment YAML files, in run order. Defaults to E0 through E8.",
     )
     arguments = parser.parse_args()
     for config_path in arguments.configs:

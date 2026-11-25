@@ -1,5 +1,5 @@
 experiment:
-  id: e8_lbp
+  id: e7_lbp
   description: Full-FOV RGB plus 8-neighbour local-binary-pattern map as the fourth channel.
 
 model:

@@ -1,5 +1,5 @@
 experiment:
-  id: e3_canny_edge_map
+  id: e2_canny_edge_map
   description: Full-FOV RGB plus Canny edge map as the fourth input channel.
 
 model:
