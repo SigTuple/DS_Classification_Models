@@ -29,15 +29,17 @@ def choose_device(value: str) -> torch.device:
     return torch.device("cuda" if value == "auto" and torch.cuda.is_available() else ("cpu" if value == "auto" else value))
 
 
-def evaluate(model, loader, criterion, device, class_count: int):
+def evaluate(model, loader, criterion, device, class_count: int, use_amp: bool):
     model.eval()
     total_loss = total_correct = total = 0
     matrix = np.zeros((class_count, class_count), dtype=np.int64)
     with torch.no_grad():
         for images, labels in loader:
             images, labels = images.to(device, non_blocking=True), labels.to(device, non_blocking=True)
-            logits = model(images)
-            total_loss += criterion(logits, labels).item() * labels.size(0)
+            with torch.amp.autocast("cuda", enabled=use_amp):
+                logits = model(images)
+                loss = criterion(logits, labels)
+            total_loss += loss.item() * labels.size(0)
             predictions = logits.argmax(dim=1)
             total_correct += (predictions == labels).sum().item()
             total += labels.size(0)
@@ -72,6 +74,7 @@ def train(config_path: str | Path, run_dir_override: str | Path | None = None, s
     with (run_dir / "config_resolved.yaml").open("w") as stream:
         yaml.safe_dump(config, stream, sort_keys=False)
     device = choose_device(config["training"]["device"])
+    use_amp = bool(config["training"].get("amp", False) and device.type == "cuda")
     data_cfg = config["data"]
     dataset_root = project_path(data_cfg["dataset_dir"])
     classes = data_cfg["classes"]
@@ -92,6 +95,7 @@ def train(config_path: str | Path, run_dir_override: str | Path | None = None, s
     print(f"Epochs: {config['training']['epochs']}")
     print(f"Learning rate: {config['training']['learning_rate']}")
     print(f"Weight decay: {config['training']['weight_decay']}")
+    print(f"Mixed precision: {'enabled' if use_amp else 'disabled'}")
 
     _banner("RBC-QI DATASET")
     print(f"Train directory:\n{dataset_root / data_cfg['train_subdir']}")
@@ -112,6 +116,8 @@ def train(config_path: str | Path, run_dir_override: str | Path | None = None, s
     print(f"Using device: {device}")
     if device.type == "cuda":
         print(f"GPU: {torch.cuda.get_device_name(device)}")
+        if use_amp:
+            print("CUDA automatic mixed precision: enabled")
 
     _banner("CREATING RBC-QI MODEL")
     model = create_model(config).to(device)
@@ -128,7 +134,8 @@ def train(config_path: str | Path, run_dir_override: str | Path | None = None, s
     _banner("RBC-QI FULL FOV FORWARD PASS CHECK")
     model.eval()
     with torch.no_grad():
-        dummy_output = model(torch.randn(1, input_channels(config), data_cfg["image_height"], data_cfg["image_width"], device=device))
+        with torch.amp.autocast("cuda", enabled=use_amp):
+            dummy_output = model(torch.randn(1, input_channels(config), data_cfg["image_height"], data_cfg["image_width"], device=device))
     print(f"Input shape: {(1, input_channels(config), data_cfg['image_height'], data_cfg['image_width'])}")
     print(f"Output shape: {tuple(dummy_output.shape)}")
     assert tuple(dummy_output.shape) == (1, len(classes))
@@ -136,6 +143,7 @@ def train(config_path: str | Path, run_dir_override: str | Path | None = None, s
     criterion = nn.CrossEntropyLoss(label_smoothing=config["training"]["label_smoothing"])
     optimizer = torch.optim.AdamW(model.parameters(), lr=config["training"]["learning_rate"], weight_decay=float(config["training"]["weight_decay"]))
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=config["training"]["epochs"])
+    scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
     logger = ExperimentLogger(config, run_dir, run_dir.name)
     best_accuracy = -1.0
     try:
@@ -146,10 +154,12 @@ def train(config_path: str | Path, run_dir_override: str | Path | None = None, s
             for batch_index, (images, labels) in enumerate(progress, start=1):
                 images, labels = images.to(device, non_blocking=True), labels.to(device, non_blocking=True)
                 optimizer.zero_grad(set_to_none=True)
-                logits = model(images)
-                loss = criterion(logits, labels)
-                loss.backward()
-                optimizer.step()
+                with torch.amp.autocast("cuda", enabled=use_amp):
+                    logits = model(images)
+                    loss = criterion(logits, labels)
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
                 running_loss += loss.item() * labels.size(0)
                 running_correct += (logits.argmax(dim=1) == labels).sum().item()
                 seen += labels.size(0)
@@ -159,11 +169,11 @@ def train(config_path: str | Path, run_dir_override: str | Path | None = None, s
                         "TRAINING", experiment_id=config["experiment"]["id"], epoch=epoch,
                         batch=batch_index, total_batches=len(train_loader),
                     )
-            validation, matrix = evaluate(model, test_loader, criterion, device, len(classes))
+            validation, matrix = evaluate(model, test_loader, criterion, device, len(classes), use_amp)
             metrics = {"epoch": epoch, "learning_rate": optimizer.param_groups[0]["lr"], "train_loss": running_loss / seen, "train_accuracy": running_correct / seen, "val_loss": validation["loss"], "val_accuracy": validation["accuracy"], "val_macro_f1": validation["macro_f1"]}
             logger.log_metrics(metrics)
             save_matrix(run_dir / f"confusion_matrix_epoch_{epoch:03d}.csv", matrix, classes)
-            checkpoint = {"epoch": epoch, "model_state_dict": model.state_dict(), "optimizer_state_dict": optimizer.state_dict(), "scheduler_state_dict": scheduler.state_dict(), "metrics": metrics, "config": config}
+            checkpoint = {"epoch": epoch, "model_state_dict": model.state_dict(), "optimizer_state_dict": optimizer.state_dict(), "scheduler_state_dict": scheduler.state_dict(), "scaler_state_dict": scaler.state_dict(), "metrics": metrics, "config": config}
             if epoch % config["training"]["save_every_epochs"] == 0:
                 torch.save(checkpoint, run_dir / f"checkpoint_epoch_{epoch:03d}.pth")
             torch.save(checkpoint, run_dir / "checkpoint_last.pth")

@@ -22,7 +22,6 @@ data:
     - shifted
     - slightly_shifted
     - severely_out_of_focus
-    - scratches
   # RBC-QI-safe augmentation policy retained from the previous training
   # configuration. All experiments inherit this exact policy by default.
   # The active geometric transforms are implemented in rbc_qi/data.py.
@@ -97,6 +96,8 @@ training:
   learning_rate: 0.0001
   weight_decay: 0.0001
   label_smoothing: 0.0
+  # CUDA automatic mixed precision: enabled only when the selected device is a GPU.
+  amp: true
   save_every_epochs: 1
   # Require CUDA rather than silently falling back to CPU.
   device: cuda
