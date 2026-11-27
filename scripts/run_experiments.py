@@ -11,8 +11,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 DEFAULT_CONFIGS = [
-    str(ROOT / "configs" / "experiments" / "e0_baseline.yaml"),
-    str(ROOT / "configs" / "experiments" / "e3_downscaled_batch2.yaml"),
+    #str(ROOT / "configs" / "experiments" / "e0_baseline.yaml"),
+    #str(ROOT / "configs" / "experiments" / "e3_downscaled_batch2.yaml"),
     str(ROOT / "configs" / "experiments" / "e7_lbp.yaml"),
     str(ROOT / "configs" / "experiments" / "e6_local_contrast.yaml"),
     str(ROOT / "configs" / "experiments" / "e5_local_entropy.yaml"),
