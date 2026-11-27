@@ -34,8 +34,21 @@ def main() -> int:
         default=DEFAULT_CONFIGS,
         help="Experiment YAML files, in run order. Defaults to E0, E3, E7, E6, E5, E4, E2, E8.",
     )
+    parser.add_argument(
+        "--start-from",
+        help="Start the selected queue at this experiment ID, for example e5_local_entropy.",
+    )
     arguments = parser.parse_args()
-    for config_path in arguments.configs:
+    config_paths = list(arguments.configs)
+    if arguments.start_from:
+        start_index = next(
+            (index for index, path in enumerate(config_paths) if load_config(path)["experiment"]["id"] == arguments.start_from),
+            None,
+        )
+        if start_index is None:
+            parser.error(f"--start-from {arguments.start_from!r} is not in the selected queue.")
+        config_paths = config_paths[start_index:]
+    for config_path in config_paths:
         config = load_config(config_path)
         runs_dir = project_path(config["project"]["runs_dir"])
         runs_dir.mkdir(parents=True, exist_ok=True)

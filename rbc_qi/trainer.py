@@ -70,7 +70,12 @@ def _banner(title: str) -> None:
     print("=" * 80)
 
 
-def train(config_path: str | Path, run_dir_override: str | Path | None = None, status_tracker=None) -> Path:
+def train(
+    config_path: str | Path,
+    run_dir_override: str | Path | None = None,
+    status_tracker=None,
+    resume_checkpoint: str | Path | None = None,
+) -> Path:
     config = load_config(config_path)
     set_seed(config["training"]["seed"])
     experiment_id = config["experiment"]["id"]
@@ -172,9 +177,32 @@ def train(config_path: str | Path, run_dir_override: str | Path | None = None, s
     scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
     logger = ExperimentLogger(config, run_dir, run_dir.name)
     best_accuracy = -1.0
+    start_epoch = 1
+    if resume_checkpoint is not None:
+        checkpoint_path = Path(resume_checkpoint)
+        if not checkpoint_path.is_file():
+            raise FileNotFoundError(f"Resume checkpoint does not exist: {checkpoint_path}")
+        checkpoint = torch.load(checkpoint_path, map_location=device)
+        model.load_state_dict(checkpoint["model_state_dict"])
+        optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+        if checkpoint.get("scaler_state_dict"):
+            scaler.load_state_dict(checkpoint["scaler_state_dict"])
+        # Checkpoints created before resume support saved the scheduler before
+        # scheduler.step(). Advance once so the next epoch gets the correct LR.
+        if not checkpoint.get("scheduler_stepped", False):
+            scheduler.step()
+        start_epoch = int(checkpoint["epoch"]) + 1
+        best_path = run_dir / "checkpoint_best.pth"
+        if best_path.is_file():
+            best_checkpoint = torch.load(best_path, map_location="cpu")
+            best_accuracy = float(best_checkpoint.get("metrics", {}).get("val_accuracy", -1.0))
+        print(f"Resuming from {checkpoint_path} after completed epoch {start_epoch - 1}.")
+        if status_tracker is not None:
+            status_tracker.update("RESUMING", experiment_id=experiment_id, checkpoint=str(checkpoint_path), next_epoch=start_epoch)
     completed = False
     try:
-        for epoch in range(1, config["training"]["epochs"] + 1):
+        for epoch in range(start_epoch, config["training"]["epochs"] + 1):
             model.train()
             running_loss = running_correct = seen = 0
             progress = tqdm(train_loader, desc=f"RBC-QI Epoch {epoch}/{config['training']['epochs']}", unit="batch", dynamic_ncols=True)
@@ -200,14 +228,14 @@ def train(config_path: str | Path, run_dir_override: str | Path | None = None, s
             metrics = {"epoch": epoch, "learning_rate": optimizer.param_groups[0]["lr"], "train_loss": running_loss / seen, "train_accuracy": running_correct / seen, "val_loss": validation["loss"], "val_accuracy": validation["accuracy"], "val_macro_f1": validation["macro_f1"]}
             logger.log_metrics(metrics)
             save_matrix(run_dir / f"confusion_matrix_epoch_{epoch:03d}.csv", matrix, classes)
-            checkpoint = {"epoch": epoch, "model_state_dict": model.state_dict(), "optimizer_state_dict": optimizer.state_dict(), "scheduler_state_dict": scheduler.state_dict(), "scaler_state_dict": scaler.state_dict(), "metrics": metrics, "config": config}
+            scheduler.step()
+            checkpoint = {"epoch": epoch, "model_state_dict": model.state_dict(), "optimizer_state_dict": optimizer.state_dict(), "scheduler_state_dict": scheduler.state_dict(), "scaler_state_dict": scaler.state_dict(), "scheduler_stepped": True, "metrics": metrics, "config": config}
             if epoch % config["training"]["save_every_epochs"] == 0:
                 torch.save(checkpoint, run_dir / f"checkpoint_epoch_{epoch:03d}.pth")
             torch.save(checkpoint, run_dir / "checkpoint_last.pth")
             if validation["accuracy"] > best_accuracy:
                 best_accuracy = validation["accuracy"]
                 torch.save(checkpoint, run_dir / "checkpoint_best.pth")
-            scheduler.step()
             print(f"{run_dir.name}: epoch {epoch}/{config['training']['epochs']} | val_accuracy={validation['accuracy']:.4f} | val_macro_f1={validation['macro_f1']:.4f}", flush=True)
         write_json(run_dir / "summary.json", {"best_val_accuracy": best_accuracy, "epochs": config["training"]["epochs"], "status": "DONE"})
         completed = True
@@ -222,5 +250,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train one RBC-QI experiment.")
     parser.add_argument("--config", required=True)
     parser.add_argument("--run-dir")
+    parser.add_argument("--resume-checkpoint")
     arguments = parser.parse_args()
-    train(arguments.config, arguments.run_dir)
+    train(arguments.config, arguments.run_dir, resume_checkpoint=arguments.resume_checkpoint)

@@ -52,6 +52,18 @@ python3 /media/sigtupleds/Data/Classification_Model_Training/RBC_QI_Training/scr
 
 All experiment YAMLs are included in the default E0–E8 queue and can also be run individually with `--configs`.
 
+To continue the queue after a completed or skipped experiment, use its experiment ID:
+
+```bash
+python3 scripts/run_experiments.py --start-from e5_local_entropy
+```
+
+To resume an interrupted run from its latest completed-epoch checkpoint, keep the same run directory and use:
+
+```bash
+python3 scripts/resume_experiment.py --experiment e6_local_contrast
+```
+
 ## Feature-map cache
 
 For Canny, entropy, contrast, LBP, and Sobel experiments, the fourth-channel map is prepared once before training and reused in every epoch. The status file reports `PREPARING_CACHE` while this happens. The cache is removed after a successful experiment; if a run stops or fails, its cache remains available for the next attempt.
@@ -64,6 +76,8 @@ python3 /media/sigtupleds/Data/Classification_Model_Training/RBC_QI_Training/scr
 ```
 
 `training_status.log` is intentionally overwritten whenever a state changes. It therefore always says which run is currently training, succeeded, or failed; completed runs retain their own `runs/<run_id>/status.json` and `summary.json`.
+
+The live status includes a PID and heartbeat timestamp. Running `scripts/status.py` checks whether that PID is still alive; an unexpectedly terminated local process is changed from `TRAINING` to `INTERRUPTED` and can be resumed from `checkpoint_last.pth`.
 
 ## Export ONNX
 
